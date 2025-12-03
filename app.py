@@ -2,164 +2,199 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from fuzzywuzzy import fuzz
 
 # --- CONFIGURATION ---
 st.set_page_config(
     page_title="Ground Truth Map",
     page_icon="🗺️",
     layout="wide",
-    initial_sidebar_state="collapsed" # Hide sidebar to give map more space
+    initial_sidebar_state="collapsed"
 )
 
-# --- CUSTOM STYLING ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    /* Make the map container tighter */
-    .element-container iframe { border-radius: 12px; border: 2px solid #e0e0e0; }
-    /* Style the metrics to look like cards */
-    .stMetric { background-color: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    /* Clean up the map border */
+    .element-container iframe { border-radius: 12px; border: 1px solid #e0e0e0; }
+    /* Card styling for metrics */
+    .stMetric { background-color: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- MOCK DATA (With GPS) ---
+# --- REAL WORLD DATASET (The 6 Cases) ---
 @st.cache_data
 def load_data():
     return [
         {
             "id": 1,
-            "name": "Boichik Bagels Factory",
-            "address": "1225 6th St, Berkeley",
-            "type": "Industrial Bakery",
-            "owner": "Sixth Street Industrial Partners LLC",
-            "status": "TENANT", # The "Truth"
-            "lat": 37.8805,
-            "lon": -122.3005,
-            "risk_score": 0,
-            "desc": "Large industrial warehouse converted to bagel factory."
+            "name": "Lanesplitter Pizza & Pub",
+            "address": "4799 Telegraph Ave, Oakland, CA",
+            "type": "Restaurant / Pub",
+            "owner": "Temescal Telegraph Properties LLC", 
+            "status": "TENANT", 
+            "lat": 37.8375, 
+            "lon": -122.2625,
+            "risk_score": 2, 
+            "desc": "Long-standing local favorite. Building is owned by a local holding company, not the business itself."
         },
         {
             "id": 2,
-            "name": "Joe's Corner Store",
-            "address": "550 Main St, Oakland",
-            "type": "Retail",
-            "owner": "550 Main St Holdings LLC",
-            "status": "TENANT",
-            "lat": 37.8050,
-            "lon": -122.2730,
-            "risk_score": 12, # High violations
-            "desc": "Corner bodega with active code violations."
+            "name": "Chez Panisse",
+            "address": "1517 Shattuck Ave, Berkeley, CA",
+            "type": "Fine Dining",
+            "owner": "Chez Panisse Corporation",
+            "status": "OWNER",
+            "lat": 37.8796, 
+            "lon": -122.2699,
+            "risk_score": 0,
+            "desc": "The birthplace of California Cuisine. Alice Waters (and partners) control the asset. A perfect example of a Community Stakeholder."
         },
         {
             "id": 3,
-            "name": "Oakland Hardware",
-            "address": "400 20th St, Oakland",
-            "type": "Retail",
-            "owner": "Oakland Hardware Inc",
-            "status": "OWNER",
-            "lat": 37.8080,
-            "lon": -122.2680,
+            "name": "Fieldwork Brewing Co.",
+            "address": "1160 6th St, Berkeley, CA",
+            "type": "Industrial Taproom",
+            "owner": "Sixth Street Industrial Partners LLC",
+            "status": "TENANT",
+            "lat": 37.8813, 
+            "lon": -122.3021,
             "risk_score": 0,
-            "desc": "Family owned since 1980. Low displacement risk."
+            "desc": "Located in the Gilman District. The building is part of a larger industrial portfolio."
+        },
+        {
+            "id": 4,
+            "name": "Whole Foods Market",
+            "address": "3000 Telegraph Ave, Berkeley, CA",
+            "type": "Grocery Anchor",
+            "owner": "Regency Centers LP", 
+            "status": "TENANT",
+            "lat": 37.8564, 
+            "lon": -122.2598,
+            "risk_score": 0,
+            "desc": "Owned by a publicly traded Real Estate Investment Trust (REIT). Rent profits leave the local economy."
+        },
+        {
+            "id": 5,
+            "name": "Amoeba Music",
+            "address": "2455 Telegraph Ave, Berkeley, CA",
+            "type": "Retail Legacy",
+            "owner": "Telegraph Property Group", 
+            "status": "TENANT",
+            "lat": 37.8659, 
+            "lon": -122.2585,
+            "risk_score": 5, 
+            "desc": "Iconic record store. While a cultural anchor, they do not own the dirt, making them vulnerable to future redevelopment."
+        },
+        {
+            "id": 6,
+            "name": "Joe's Corner Bodega (TEST)",
+            "address": "550 Main St, Oakland, CA",
+            "type": "Retail Small",
+            "owner": "550 Main St Holdings LLC",
+            "status": "TENANT",
+            "lat": 37.8050, 
+            "lon": -122.2730,
+            "risk_score": 12, 
+            "desc": "Test case for distress signals. High violation count and out-of-state tax mailing address."
         }
     ]
 
 properties = load_data()
 
-# --- HELPER: MAP GENERATOR ---
+# --- MAP ENGINE ---
 def create_map(center_lat, center_lon, zoom):
+    # Base Map: Light simplistic theme
     m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles="CartoDB positron")
     
     for prop in properties:
-        # Color Logic
+        # VISUAL LOGIC
+        # Green = Owner Occupied (Good)
+        # Red = Tenant (Risk/Extraction)
         color = "red" if prop["status"] == "TENANT" else "green"
-        icon = "building" if prop["status"] == "TENANT" else "star"
+        icon_type = "building" if prop["status"] == "TENANT" else "star"
         
-        # HTML Popup (The "Hover" summary)
+        # POPUP HTML (Hover Card)
         html = f"""
-        <div style='font-family: sans-serif; width: 200px;'>
-            <b>{prop['name']}</b><br>
-            <span style='color: grey; font-size: 12px;'>{prop['address']}</span><br>
-            <hr style='margin: 5px 0;'>
+        <div style='font-family: sans-serif; width: 180px;'>
+            <strong style='font-size: 14px;'>{prop['name']}</strong><br>
+            <span style='color: #666; font-size: 11px;'>{prop['address']}</span><br>
+            <hr style='margin: 4px 0; border: 0; border-top: 1px solid #eee;'>
             Status: <b>{prop['status']}</b><br>
-            Owner: {prop['owner']}
         </div>
         """
         
         folium.Marker(
             [prop['lat'], prop['lon']],
-            popup=folium.Popup(html, max_width=300),
+            popup=folium.Popup(html, max_width=250),
             tooltip=prop["name"],
-            icon=folium.Icon(color=color, icon=icon, prefix='fa')
+            icon=folium.Icon(color=color, icon=icon_type, prefix='fa')
         ).add_to(m)
     
     return m
 
-# --- MAIN APP LAYOUT ---
+# --- APP LAYOUT ---
 
-st.title("🗺️ Ground Truth: Neighborhood Explorer")
-st.markdown("Click any pin to see who really owns the property.")
+st.title("🗺️ Ground Truth")
+st.caption("Intelligence Scanner: Tap a pin to reveal ownership.")
 
 col_map, col_details = st.columns([2, 1])
 
 with col_map:
-    # Render the Map
-    # We use a default center between Berkeley and Oakland
+    # 1. Render Map (Centered on Berkeley/Oakland border)
     m = create_map(37.84, -122.28, 12)
     
-    # st_folium allows bidirectional communication (we know what you clicked)
+    # 2. Capture User Click
+    # This function returns a dict containing info about what was clicked
     map_data = st_folium(m, height=600, width="100%")
 
-# --- INTERACTION LOGIC ---
-# If a user clicks a marker, 'last_object_clicked' will contain the Lat/Lon
+# --- CLICK LOGIC ---
 clicked_prop = None
 
 if map_data and map_data.get("last_object_clicked"):
     clicked_lat = map_data["last_object_clicked"]["lat"]
-    # Find the property in our DB that matches this location
-    # (In real life we use IDs, but Lat/Lon works for this demo)
+    # Find matching property by latitude (simple lookup)
     clicked_prop = next((p for p in properties if abs(p["lat"] - clicked_lat) < 0.0001), None)
 
-# --- THE DETAILS PANEL (Overlay) ---
+# --- DETAIL PANEL (Right Side) ---
 with col_details:
     if clicked_prop:
-        # HEADER
-        st.header(clicked_prop["name"])
-        st.caption(clicked_prop["address"])
+        # Header
+        st.subheader(clicked_prop["name"])
+        st.caption(f"📍 {clicked_prop['address']}")
         
-        # TAGS
+        st.divider()
+        
+        # Status Banner
         if clicked_prop["status"] == "OWNER":
-            st.success("👑 **Owner-Occupied** (Community Stakeholder)")
+            st.success("👑 **OWNER OCCUPIED**")
+            st.caption("This business owns their building. They are a stable community stakeholder.")
         else:
-            st.error("🛡️ **Tenant Business** (Leaseholder)")
-            
-        st.markdown("---")
-        
-        # KEY INTEL
-        st.markdown("#### 🕵️ Intelligence Brief")
-        st.info(f"**True Owner:** {clicked_prop['owner']}")
-        st.write(f"**Description:** {clicked_prop['desc']}")
-        
-        # METRICS
+            st.error("🛡️ **TENANT (LEASEHOLDER)**")
+            st.caption("This business pays rent to a landlord. They do not control the property.")
+
+        # Metrics Grid
         c1, c2 = st.columns(2)
-        c1.metric("Building Type", clicked_prop["type"])
+        c1.metric("Landlord", "See Desc", help=clicked_prop['owner'])
         
-        risk_color = "normal" if clicked_prop['risk_score'] == 0 else "inverse"
-        c2.metric("Violations", clicked_prop['risk_score'], delta_color=risk_color)
+        # Risk Logic
+        if clicked_prop['risk_score'] > 0:
+            c2.metric("Risk Flags", clicked_prop['risk_score'], "Violations", delta_color="inverse")
+        else:
+            c2.metric("Risk Flags", "Clean", "No Violations")
+
+        # Deep Dive Text
+        st.markdown("#### 🕵️ Intelligence Brief")
+        st.info(f"**Owner of Record:** {clicked_prop['owner']}")
+        st.write(clicked_prop['desc'])
         
-        # ACTION
-        st.markdown("###")
-        if st.button("📄 View Full Dossier", type="primary", use_container_width=True):
-            st.toast("Opening full report database...", icon="📂")
-            # This is where you would route to a new page
-            
+        st.button("📄 Open Full Dossier", use_container_width=True)
+
     else:
-        # Default State (No Selection)
-        st.info("👈 **Select a property on the map** to reveal ownership details.")
+        # Empty State
+        st.markdown("###")
+        st.markdown("###")
+        st.info("👈 **Select a location on the map.**")
         
-        st.markdown("### Legend")
-        st.markdown("🟢 **Owner-Occupied:** The business owns the building.")
-        st.markdown("🔴 **Tenant:** The business pays rent to a landlord.")
-        
-        st.markdown("---")
-        st.caption("Map centered on East Bay, CA. Data is for demonstration purposes.")
+        st.markdown("#### Legend")
+        st.markdown("🟢 **Owner-Occupied:** (e.g. Chez Panisse)")
+        st.markdown("🔴 **Tenant:** (e.g. Whole Foods, Lanesplitter)")
