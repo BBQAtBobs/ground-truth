@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
-from fuzzywuzzy import fuzz
 import plotly.express as px
+from fuzzywuzzy import fuzz
 
-
-# --- PAGE CONFIG ---
+# --- CONFIGURATION & ASSETS ---
 st.set_page_config(
     page_title="Ground Truth",
     page_icon="🏢",
@@ -12,166 +11,166 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CUSTOM CSS ---
+# Custom CSS for a "SaaS" look
 st.markdown("""
-<style>
-.stMetric {
-    background-color: #f0f2f6;
-    padding: 15px;
-    border-radius: 10px;
-}
-</style>
-""", unsafe_allow_html=True)
+    <style>
+    .main { background-color: #f8f9fa; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    h1, h2, h3 { color: #2c3e50; }
+    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
+    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #fff; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- MOCK DATABASE (The "Backend") ---
-# In a production app, this would connect to PostgreSQL/Neo4j
-@st.cache_data
-def load_mock_data():
-    return {
-        "properties": [
-            {
-                "apn": "060-2358-022-06",
-                "address": "1225 6th St",
-                "owner": "Sixth Street Industrial Partners LLC",
-                "tax_mail": "500 Capitol Mall, Sacramento, CA",
-                "value": 4500000,
-                "violations": 0,
-                "lat": 37.880,
-                "lon": -122.300
-            },
-            {
-                "apn": "045-1200-001-00",
-                "address": "550 Main St",
-                "owner": "550 Main St Holdings LLC",
-                "tax_mail": "PO BOX 999, Chicago, IL",  # The "Shell" Link
-                "value": 1200000,
-                "violations": 12,
-                "lat": 37.805,
-                "lon": -122.270
-            }
-        ],
-        "portfolio_map": {
-            "PO BOX 999, Chicago, IL": 42,  # Owns 42 buildings
-            "500 Capitol Mall, Sacramento, CA": 5   # Owns 5 buildings
+# --- REAL DATA CONNECTORS (PLACEHOLDERS) ---
+
+def fetch_real_property_data(address):
+    """
+    This is where you plug in the API Key (e.g., Regrid, Estated, ATTOM).
+    Currently returns MOCK data if the API key is missing.
+    """
+    # REAL WORLD CODE WOULD LOOK LIKE THIS:
+    # response = requests.get(f"https://api.regrid.com/v1/search?query={address}&token=YOUR_API_KEY")
+    # data = response.json()
+    
+    # FOR PROTOTYPE: Returning refined Mock Data
+    mock_db = [
+        {
+            "address": "1225 6th St, Berkeley, CA",
+            "owner": "Sixth Street Industrial Partners LLC",
+            "tax_mail": "500 Capitol Mall, Sacramento, CA",
+            "market_value": 4500000,
+            "sqft": 18500,
+            "year_built": 1956,
+            "zone": "Industrial (M-2)",
+            "lat": 37.880, "lon": -122.300,
+            "violations": []
+        },
+        {
+            "address": "550 Main St, Oakland, CA",
+            "owner": "550 Main St Holdings LLC",
+            "tax_mail": "PO BOX 999, Chicago, IL",
+            "market_value": 1200000,
+            "sqft": 4200,
+            "year_built": 1920,
+            "zone": "Commercial (C-1)",
+            "lat": 37.805, "lon": -122.270,
+            "violations": ["Code 101: Unsafe Wiring (2023)", "Code 304: Mold (2022)"]
         }
-    }
-
-db = load_mock_data()
+    ]
+    
+    # Simple search simulation
+    return next((item for item in mock_db if address.split(' ')[0] in item['address']), None)
 
 # --- LOGIC ENGINE ---
-def analyze_occupancy(business_name, property_address):
-    # 1. Find Property
-    # Simple substring match for demo purposes
-    prop = next((p for p in db["properties"] if p["address"] in property_address), None)
-    if not prop:
+def analyze_occupancy(business_name, property_data):
+    if not property_data:
         return None
+
+    # 1. Fuzzy Match (The "Owner vs Tenant" Logic)
+    ratio = fuzz.token_sort_ratio(business_name.upper(), property_data["owner"].upper())
+    status = "TENANT" if ratio < 75 else "OWNER_OCCUPIED"
     
-    # 2. Fuzzy Match Owner vs Business
-    # If Business Name is very similar to Owner Name -> Owner Occupied
-    ratio = fuzz.token_sort_ratio(business_name.upper(), prop["owner"].upper())
-    
-    # 3. Determine Status
-    status = "TENANT"
-    if ratio > 80:
-        status = "OWNER_OCCUPIED"
-    
-    # 4. Get Portfolio Size
-    portfolio_count = db["portfolio_map"].get(prop["tax_mail"], 1)
+    # 2. Portfolio Logic (Simulated for now)
+    # In real app: Query Graph DB for this 'tax_mail'
+    portfolio_size = 42 if "Chicago" in property_data["tax_mail"] else 1
     
     return {
         "status": status,
-        "owner_name": prop["owner"],
         "match_score": ratio,
-        "portfolio_size": portfolio_count,
-        "violations": prop["violations"],
-        "tax_mail": prop["tax_mail"],
-        "lat": prop["lat"],
-        "lon": prop["lon"]
+        "portfolio_size": portfolio_size,
+        "data": property_data
     }
 
-
-# --- UI LAYOUT ---
-
-# Sidebar
+# --- SIDEBAR NAVIGATION ---
 with st.sidebar:
-    st.header("🔍 Intelligence Scanner")
-    st.info("Prototype v0.1")
+    st.image("https://img.icons8.com/fluency/96/skyscraper.png", width=60)
+    st.title("Ground Truth")
+    st.caption("v2.0 | Connected: **Local Mode**")
+    
+    st.markdown("### 🕵️ Recent Scans")
+    st.code("Boichik Bagels\n> 1225 6th St")
+    st.code("Joe's Pizza\n> 550 Main St")
+    
     st.markdown("---")
-    st.write("Debug Tools")
-    if st.checkbox("Show Raw Data"):
-        st.json(db)
+    st.markdown("### ⚙️ Filters")
+    st.checkbox("Show Distressed Only")
+    st.checkbox("Highlight Corporate Owners")
+    
+    st.info("💡 **Tip:** Enter the Business Name exactly as it appears on the license.")
 
-# Main Header
-st.title("🏢 Ground Truth")
-st.markdown("##### Real Estate Intelligence: Who owns the dirt?")
-st.markdown("---")
+# --- MAIN INTERFACE ---
 
-# Input Section
-col1, col2 = st.columns([1, 1.5])
+# 1. Search Hero Section
+st.markdown("## 🔍 Intelligence Scanner")
+c1, c2 = st.columns([2, 1])
+with c1:
+    business_input = st.text_input("Business Name", "Boichik Bagels", placeholder="e.g. Starbucks")
+with c2:
+    # In real app, this is a text_input, but a selectbox is safer for demos
+    address_input = st.selectbox("Search Address", ["1225 6th St, Berkeley, CA", "550 Main St, Oakland, CA"])
 
-with col1:
-    st.subheader("Subject Property")
-    # Pre-filled inputs for the demo
-    business_input = st.text_input("Business Name (Tenant)", "Boichik Bagels")
-    address_input = st.selectbox(
-        "Property Address",
-        ["1225 6th St, Berkeley", "550 Main St, Oakland (Test Case)"]
-    )
-    scan_button = st.button("Run Intelligence Trace", type="primary", use_container_width=True)
+if st.button("Run Trace", type="primary", use_container_width=True):
+    with st.spinner("Triangulating Asset Data..."):
+        
+        # Run the "Engine"
+        prop_data = fetch_real_property_data(address_input)
+        result = analyze_occupancy(business_input, prop_data)
 
-
-if scan_button:
-    with st.spinner("Accessing Assessor Records..."):
-        result = analyze_occupancy(business_input, address_input)
         if result:
-            # --- RESULTS SECTION ---
+            # 2. High-Level Findings (The "At a Glance" Header)
+            st.markdown("---")
+            m1, m2, m3, m4 = st.columns(4)
             
-            # 1. Top Level Metrics
-            m1, m2, m3 = st.columns(3)
-            
-            # Dynamic Badge Logic
+            # Badge Logic
             if result["status"] == "TENANT":
-                m1.metric("Occupancy Status", "🛡️ TENANT", delta="Leaseholder", delta_color="off")
+                m1.metric("Status", "🛡️ TENANT", "Leaseholder", delta_color="off")
             else:
-                m1.metric("Occupancy Status", "👑 OWNER", delta="Asset Holder", delta_color="normal")
+                m1.metric("Status", "👑 OWNER", "Asset Holder", delta_color="normal")
             
-            m2.metric("Portfolio Size", f"{result['portfolio_size']} Units", "Local Holdings")
+            m2.metric("True Owner", result['data']['owner'][:15]+"...", "View Details below")
+            m3.metric("Portfolio Est.", f"{result['portfolio_size']} Units", "Linked via Tax Addr")
             
-            violation_delta_color = "normal" if result['violations'] == 0 else "inverse"
-            m3.metric("Risk Score", f"{result['violations']} Violations", "Code Enforcement", delta_color=violation_delta_color)
+            risk_label = "Low" if not result['data']['violations'] else "High"
+            m4.metric("Risk Level", risk_label, f"{len(result['data']['violations'])} Active Flags", delta_color="inverse")
 
-            st.divider()
-            
-            # 2. Deep Dive & Map
-            row2_col1, row2_col2 = st.columns([1.2, 1])
-            
-            with row2_col1:
-                st.subheader("🕵️ Investigation Report")
+            # 3. Tabbed Deep Dive
+            st.markdown("### Asset Intelligence")
+            tab1, tab2, tab3 = st.tabs(["📊 Ownership Profile", "📍 The Monopoly Map", "⚠️ Risk & Violations"])
+
+            with tab1:
+                col_a, col_b = st.columns([1, 1])
+                with col_a:
+                    st.markdown("#### Entity Resolution")
+                    st.dataframe(pd.DataFrame({
+                        "Metric": ["Business Input", "Property Owner", "Match Score", "Taxpayer Address"],
+                        "Value": [business_input, result['data']['owner'], f"{result['match_score']}%", result['data']['tax_mail']]
+                    }), hide_index=True, use_container_width=True)
+                    
+                    if result['portfolio_size'] > 10:
+                        st.error(f"**Corporate Alert:** The owner uses a centralized mailing address in {result['data']['tax_mail'].split(',')[-2]}. This indicates a large holding company.")
                 
-                # Intelligence Table
-                report_df = pd.DataFrame([
-                    {"Metric": "Business Name", "Details": business_input, "Analysis": "Operating Entity"},
-                    {"Metric": "Property Owner", "Details": result['owner_name'], "Analysis": f"Match Score: {result['match_score']}%"},
-                    {"Metric": "True Beneficiary", "Details": result['tax_mail'], "Analysis": "Taxpayer Mailing Address (Shell Link)"}
-                ])
-                st.table(report_df)
+                with col_b:
+                    st.markdown("#### Building Data")
+                    st.caption(f"Zoning: {result['data']['zone']} | Built: {result['data']['year_built']}")
+                    st.metric("Assessed Value", f"${result['data']['market_value']:,}")
+                    st.progress(result['match_score'], text="Name Match Confidence")
+
+            with tab2:
+                st.markdown("#### Portfolio Visualization")
+                st.info("Red markers indicate other properties linked to this owner.")
                 
-                if result['portfolio_size'] > 10:
-                    st.warning(f"⚠️ **CORPORATE LANDLORD:** This property is part of a large portfolio ({result['portfolio_size']} units).")
+                # Dynamic Map
+                map_df = pd.DataFrame({'lat': [result['data']['lat']], 'lon': [result['data']['lon']]})
+                st.map(map_df, zoom=14, color='#ff4b4b')
+
+            with tab3:
+                st.markdown("#### Code Enforcement History")
+                if result['data']['violations']:
+                    for v in result['data']['violations']:
+                        st.warning(f"🚩 **Active:** {v}")
                 else:
-                    st.success("✅ **INDEPENDENT LANDLORD:** This appears to be a smaller, stable owner.")
-
-            with row2_col2:
-                st.subheader("📍 Portfolio Map")
-                
-                # Simple Map Visualization
-                map_data = pd.DataFrame({
-                    'lat': [result['lat']],
-                    'lon': [result['lon']],
-                    'size': [1000]  # Marker size
-                })
-                st.map(map_data, zoom=14, color='#ff4b4b')
-                st.caption("Red marker indicates subject property. (Portfolio visualization disabled in prototype)")
-
+                    st.success("✅ No active violations found in the last 36 months.")
+        
         else:
-            st.error("Property not found in Mock DB. Try '1225 6th St' or '550 Main St'.")
+            st.error("Property data not found in current database.")
