@@ -214,4 +214,3 @@ def create_map(center_lat, center_lon, zoom, highlight_group=None):
     return m
 
 # --- APP LAYOUT ---
-st.
