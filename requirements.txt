@@ -3,3 +3,5 @@ pandas
 fuzzywuzzy
 python-Levenshtein
 plotly
+folium
+streamlit-folium

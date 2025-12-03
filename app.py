@@ -1,176 +1,165 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import folium
+from streamlit_folium import st_folium
 from fuzzywuzzy import fuzz
 
-# --- CONFIGURATION & ASSETS ---
+# --- CONFIGURATION ---
 st.set_page_config(
-    page_title="Ground Truth",
-    page_icon="🏢",
+    page_title="Ground Truth Map",
+    page_icon="🗺️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed" # Hide sidebar to give map more space
 )
 
-# Custom CSS for a "SaaS" look
+# --- CUSTOM STYLING ---
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    h1, h2, h3 { color: #2c3e50; }
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #fff; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    /* Make the map container tighter */
+    .element-container iframe { border-radius: 12px; border: 2px solid #e0e0e0; }
+    /* Style the metrics to look like cards */
+    .stMetric { background-color: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     </style>
     """, unsafe_allow_html=True)
 
-# --- REAL DATA CONNECTORS (PLACEHOLDERS) ---
-
-def fetch_real_property_data(address):
-    """
-    This is where you plug in the API Key (e.g., Regrid, Estated, ATTOM).
-    Currently returns MOCK data if the API key is missing.
-    """
-    # REAL WORLD CODE WOULD LOOK LIKE THIS:
-    # response = requests.get(f"https://api.regrid.com/v1/search?query={address}&token=YOUR_API_KEY")
-    # data = response.json()
-    
-    # FOR PROTOTYPE: Returning refined Mock Data
-    mock_db = [
+# --- MOCK DATA (With GPS) ---
+@st.cache_data
+def load_data():
+    return [
         {
-            "address": "1225 6th St, Berkeley, CA",
+            "id": 1,
+            "name": "Boichik Bagels Factory",
+            "address": "1225 6th St, Berkeley",
+            "type": "Industrial Bakery",
             "owner": "Sixth Street Industrial Partners LLC",
-            "tax_mail": "500 Capitol Mall, Sacramento, CA",
-            "market_value": 4500000,
-            "sqft": 18500,
-            "year_built": 1956,
-            "zone": "Industrial (M-2)",
-            "lat": 37.880, "lon": -122.300,
-            "violations": []
+            "status": "TENANT", # The "Truth"
+            "lat": 37.8805,
+            "lon": -122.3005,
+            "risk_score": 0,
+            "desc": "Large industrial warehouse converted to bagel factory."
         },
         {
-            "address": "550 Main St, Oakland, CA",
+            "id": 2,
+            "name": "Joe's Corner Store",
+            "address": "550 Main St, Oakland",
+            "type": "Retail",
             "owner": "550 Main St Holdings LLC",
-            "tax_mail": "PO BOX 999, Chicago, IL",
-            "market_value": 1200000,
-            "sqft": 4200,
-            "year_built": 1920,
-            "zone": "Commercial (C-1)",
-            "lat": 37.805, "lon": -122.270,
-            "violations": ["Code 101: Unsafe Wiring (2023)", "Code 304: Mold (2022)"]
+            "status": "TENANT",
+            "lat": 37.8050,
+            "lon": -122.2730,
+            "risk_score": 12, # High violations
+            "desc": "Corner bodega with active code violations."
+        },
+        {
+            "id": 3,
+            "name": "Oakland Hardware",
+            "address": "400 20th St, Oakland",
+            "type": "Retail",
+            "owner": "Oakland Hardware Inc",
+            "status": "OWNER",
+            "lat": 37.8080,
+            "lon": -122.2680,
+            "risk_score": 0,
+            "desc": "Family owned since 1980. Low displacement risk."
         }
     ]
-    
-    # Simple search simulation
-    return next((item for item in mock_db if address.split(' ')[0] in item['address']), None)
 
-# --- LOGIC ENGINE ---
-def analyze_occupancy(business_name, property_data):
-    if not property_data:
-        return None
+properties = load_data()
 
-    # 1. Fuzzy Match (The "Owner vs Tenant" Logic)
-    ratio = fuzz.token_sort_ratio(business_name.upper(), property_data["owner"].upper())
-    status = "TENANT" if ratio < 75 else "OWNER_OCCUPIED"
+# --- HELPER: MAP GENERATOR ---
+def create_map(center_lat, center_lon, zoom):
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles="CartoDB positron")
     
-    # 2. Portfolio Logic (Simulated for now)
-    # In real app: Query Graph DB for this 'tax_mail'
-    portfolio_size = 42 if "Chicago" in property_data["tax_mail"] else 1
-    
-    return {
-        "status": status,
-        "match_score": ratio,
-        "portfolio_size": portfolio_size,
-        "data": property_data
-    }
-
-# --- SIDEBAR NAVIGATION ---
-with st.sidebar:
-    st.image("https://img.icons8.com/fluency/96/skyscraper.png", width=60)
-    st.title("Ground Truth")
-    st.caption("v2.0 | Connected: **Local Mode**")
-    
-    st.markdown("### 🕵️ Recent Scans")
-    st.code("Boichik Bagels\n> 1225 6th St")
-    st.code("Joe's Pizza\n> 550 Main St")
-    
-    st.markdown("---")
-    st.markdown("### ⚙️ Filters")
-    st.checkbox("Show Distressed Only")
-    st.checkbox("Highlight Corporate Owners")
-    
-    st.info("💡 **Tip:** Enter the Business Name exactly as it appears on the license.")
-
-# --- MAIN INTERFACE ---
-
-# 1. Search Hero Section
-st.markdown("## 🔍 Intelligence Scanner")
-c1, c2 = st.columns([2, 1])
-with c1:
-    business_input = st.text_input("Business Name", "Boichik Bagels", placeholder="e.g. Starbucks")
-with c2:
-    # In real app, this is a text_input, but a selectbox is safer for demos
-    address_input = st.selectbox("Search Address", ["1225 6th St, Berkeley, CA", "550 Main St, Oakland, CA"])
-
-if st.button("Run Trace", type="primary", use_container_width=True):
-    with st.spinner("Triangulating Asset Data..."):
+    for prop in properties:
+        # Color Logic
+        color = "red" if prop["status"] == "TENANT" else "green"
+        icon = "building" if prop["status"] == "TENANT" else "star"
         
-        # Run the "Engine"
-        prop_data = fetch_real_property_data(address_input)
-        result = analyze_occupancy(business_input, prop_data)
-
-        if result:
-            # 2. High-Level Findings (The "At a Glance" Header)
-            st.markdown("---")
-            m1, m2, m3, m4 = st.columns(4)
-            
-            # Badge Logic
-            if result["status"] == "TENANT":
-                m1.metric("Status", "🛡️ TENANT", "Leaseholder", delta_color="off")
-            else:
-                m1.metric("Status", "👑 OWNER", "Asset Holder", delta_color="normal")
-            
-            m2.metric("True Owner", result['data']['owner'][:15]+"...", "View Details below")
-            m3.metric("Portfolio Est.", f"{result['portfolio_size']} Units", "Linked via Tax Addr")
-            
-            risk_label = "Low" if not result['data']['violations'] else "High"
-            m4.metric("Risk Level", risk_label, f"{len(result['data']['violations'])} Active Flags", delta_color="inverse")
-
-            # 3. Tabbed Deep Dive
-            st.markdown("### Asset Intelligence")
-            tab1, tab2, tab3 = st.tabs(["📊 Ownership Profile", "📍 The Monopoly Map", "⚠️ Risk & Violations"])
-
-            with tab1:
-                col_a, col_b = st.columns([1, 1])
-                with col_a:
-                    st.markdown("#### Entity Resolution")
-                    st.dataframe(pd.DataFrame({
-                        "Metric": ["Business Input", "Property Owner", "Match Score", "Taxpayer Address"],
-                        "Value": [business_input, result['data']['owner'], f"{result['match_score']}%", result['data']['tax_mail']]
-                    }), hide_index=True, use_container_width=True)
-                    
-                    if result['portfolio_size'] > 10:
-                        st.error(f"**Corporate Alert:** The owner uses a centralized mailing address in {result['data']['tax_mail'].split(',')[-2]}. This indicates a large holding company.")
-                
-                with col_b:
-                    st.markdown("#### Building Data")
-                    st.caption(f"Zoning: {result['data']['zone']} | Built: {result['data']['year_built']}")
-                    st.metric("Assessed Value", f"${result['data']['market_value']:,}")
-                    st.progress(result['match_score'], text="Name Match Confidence")
-
-            with tab2:
-                st.markdown("#### Portfolio Visualization")
-                st.info("Red markers indicate other properties linked to this owner.")
-                
-                # Dynamic Map
-                map_df = pd.DataFrame({'lat': [result['data']['lat']], 'lon': [result['data']['lon']]})
-                st.map(map_df, zoom=14, color='#ff4b4b')
-
-            with tab3:
-                st.markdown("#### Code Enforcement History")
-                if result['data']['violations']:
-                    for v in result['data']['violations']:
-                        st.warning(f"🚩 **Active:** {v}")
-                else:
-                    st.success("✅ No active violations found in the last 36 months.")
+        # HTML Popup (The "Hover" summary)
+        html = f"""
+        <div style='font-family: sans-serif; width: 200px;'>
+            <b>{prop['name']}</b><br>
+            <span style='color: grey; font-size: 12px;'>{prop['address']}</span><br>
+            <hr style='margin: 5px 0;'>
+            Status: <b>{prop['status']}</b><br>
+            Owner: {prop['owner']}
+        </div>
+        """
         
+        folium.Marker(
+            [prop['lat'], prop['lon']],
+            popup=folium.Popup(html, max_width=300),
+            tooltip=prop["name"],
+            icon=folium.Icon(color=color, icon=icon, prefix='fa')
+        ).add_to(m)
+    
+    return m
+
+# --- MAIN APP LAYOUT ---
+
+st.title("🗺️ Ground Truth: Neighborhood Explorer")
+st.markdown("Click any pin to see who really owns the property.")
+
+col_map, col_details = st.columns([2, 1])
+
+with col_map:
+    # Render the Map
+    # We use a default center between Berkeley and Oakland
+    m = create_map(37.84, -122.28, 12)
+    
+    # st_folium allows bidirectional communication (we know what you clicked)
+    map_data = st_folium(m, height=600, width="100%")
+
+# --- INTERACTION LOGIC ---
+# If a user clicks a marker, 'last_object_clicked' will contain the Lat/Lon
+clicked_prop = None
+
+if map_data and map_data.get("last_object_clicked"):
+    clicked_lat = map_data["last_object_clicked"]["lat"]
+    # Find the property in our DB that matches this location
+    # (In real life we use IDs, but Lat/Lon works for this demo)
+    clicked_prop = next((p for p in properties if abs(p["lat"] - clicked_lat) < 0.0001), None)
+
+# --- THE DETAILS PANEL (Overlay) ---
+with col_details:
+    if clicked_prop:
+        # HEADER
+        st.header(clicked_prop["name"])
+        st.caption(clicked_prop["address"])
+        
+        # TAGS
+        if clicked_prop["status"] == "OWNER":
+            st.success("👑 **Owner-Occupied** (Community Stakeholder)")
         else:
-            st.error("Property data not found in current database.")
+            st.error("🛡️ **Tenant Business** (Leaseholder)")
+            
+        st.markdown("---")
+        
+        # KEY INTEL
+        st.markdown("#### 🕵️ Intelligence Brief")
+        st.info(f"**True Owner:** {clicked_prop['owner']}")
+        st.write(f"**Description:** {clicked_prop['desc']}")
+        
+        # METRICS
+        c1, c2 = st.columns(2)
+        c1.metric("Building Type", clicked_prop["type"])
+        
+        risk_color = "normal" if clicked_prop['risk_score'] == 0 else "inverse"
+        c2.metric("Violations", clicked_prop['risk_score'], delta_color=risk_color)
+        
+        # ACTION
+        st.markdown("###")
+        if st.button("📄 View Full Dossier", type="primary", use_container_width=True):
+            st.toast("Opening full report database...", icon="📂")
+            # This is where you would route to a new page
+            
+    else:
+        # Default State (No Selection)
+        st.info("👈 **Select a property on the map** to reveal ownership details.")
+        
+        st.markdown("### Legend")
+        st.markdown("🟢 **Owner-Occupied:** The business owns the building.")
+        st.markdown("🔴 **Tenant:** The business pays rent to a landlord.")
+        
+        st.markdown("---")
+        st.caption("Map centered on East Bay, CA. Data is for demonstration purposes.")
