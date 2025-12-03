@@ -214,3 +214,95 @@ def create_map(center_lat, center_lon, zoom, highlight_group=None):
     return m
 
 # --- APP LAYOUT ---
+st.title("🗺️ Ground Truth")
+st.caption("Intelligence Scanner: Tap a pin to reveal the owner's portfolio.")
+
+col_map, col_details = st.columns([2, 1])
+
+# --- SESSION STATE FOR SELECTION ---
+if 'selected_id' not in st.session_state:
+    st.session_state.selected_id = None
+
+# --- MAP INTERACTION ---
+with col_map:
+    # 1. Determine Highlight State
+    active_group = None
+    if st.session_state.selected_id:
+        selected_prop = next((p for p in properties if p["id"] == st.session_state.selected_id), None)
+        if selected_prop:
+            active_group = selected_prop["portfolio_group"]
+            
+    # 2. Draw Map (centered on Berkeley/Oakland border)
+    m = create_map(37.86, -122.27, 13, highlight_group=active_group)
+    
+    # 3. Capture Click
+    map_data = st_folium(m, height=600, width="100%")
+
+# Handle Click Event from Folium
+if map_data and map_data.get("last_object_clicked"):
+    clicked_lat = map_data["last_object_clicked"]["lat"]
+    # Find matching property by latitude
+    found_prop = next((p for p in properties if abs(p["lat"] - clicked_lat) < 0.0001), None)
+    
+    # Update Session State (only if different)
+    if found_prop and found_prop["id"] != st.session_state.selected_id:
+        st.session_state.selected_id = found_prop["id"]
+        st.rerun()
+
+# --- DETAILS PANEL ---
+with col_details:
+    if st.session_state.selected_id:
+        # Get Current Property
+        prop = next((p for p in properties if p["id"] == st.session_state.selected_id), None)
+        
+        if prop:
+            # Header
+            st.subheader(prop["name"])
+            st.caption(f"📍 {prop['address']}")
+            st.divider()
+
+            # Status Badge
+            if prop["status"] == "OWNER":
+                st.success("👑 **OWNER OCCUPIED**")
+            elif prop["status"] == "VACANT":
+                st.warning("⚠️ **VACANT ASSET**")
+            else:
+                st.error("🛡️ **TENANT (LEASEHOLDER)**")
+
+            # Owner Info
+            st.info(f"**Landlord:** {prop['owner']}")
+            st.write(prop['desc'])
+
+            # --- PORTFOLIO FEATURE ---
+            related = get_related_properties(prop["id"], prop["portfolio_group"])
+            
+            st.markdown("### 🏢 Portfolio Holdings")
+            if related:
+                st.caption(f"This owner controls {len(related)} other assets in this dataset.")
+                
+                for rel in related:
+                    with st.expander(f"📍 {rel['name']}", expanded=True):
+                        st.write(f"**Address:** {rel['address']}")
+                        # Color code the status
+                        status_emoji = "🔴" if rel['status'] == "TENANT" else "🟠" if rel['status'] == "VACANT" else "🟢"
+                        st.write(f"**Status:** {status_emoji} {rel['status']}")
+                        
+                        # Jump Button
+                        if st.button(f"Jump to Property", key=f"btn_{rel['id']}"):
+                            st.session_state.selected_id = rel["id"]
+                            st.rerun()
+            else:
+                st.caption("No other assets found in this dataset for this owner.")
+
+    else:
+        # Default State
+        st.info("👈 **Select a property on the map.**")
+        st.markdown("#### What am I looking at?")
+        st.markdown("""
+        - 🟢 **Owner-Occupied:** Local stakeholders (e.g., Chez Panisse).
+        - 🔴 **Tenant:** Businesses paying rent to landlords.
+        - 🟠 **Vacant:** Empty lots/buildings (e.g., The 'Mad Monk' Lot).
+        """)
+        
+        st.markdown("---")
+        st.markdown("**Try this:** Click on *Rasputin Music* to see the extent of Ken Sarachan's real estate portfolio.")
